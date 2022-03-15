@@ -478,12 +478,12 @@ class TTTGame
     @winner = nil
 
     WIN_LINES.each do |win_line|
-      line = win_line.map do |position|
+      line_state = win_line.map do |position|
         board.grid[position].state
       end
 
-      @winner = X if line.all?(X)
-      @winner = O if line.all?(O)
+      @winner = X if line_state.all?(X)
+      @winner = O if line_state.all?(O)
       break if winner
     end
     winner
