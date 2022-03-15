@@ -1,4 +1,4 @@
-
+require 'pry'
 module Invalid
   def invalid
     puts "Invalid entry, please try again"
@@ -27,12 +27,20 @@ class Square
 end
 
 class Board
-
+  @@all_spaces = *(1..9)
   attr_reader :board, :available_spaces
 
   def initialize
     @available_spaces = *(1..9)
     build_board
+  end
+
+  def all_spaces
+    @@all_spaces
+  end
+
+  def state_of(position)
+    board[position].state
   end
 
   def build_board
@@ -46,6 +54,11 @@ class Board
   def mark_square(position, game_piece)
     @board[position].mark(game_piece)
     available_spaces.delete(position)
+  end
+
+  def reset
+    @available_spaces = *(1..9)
+    build_board
   end
 
   def to_s
@@ -92,8 +105,12 @@ class Player
   def initialize(board)
     @board = board
     @score = 0
-    @available_spaces = board.available_spaces
     choose_name
+    @available_spaces = board.available_spaces
+  end
+
+  def reset
+    @available_spaces = board.available_spaces
   end
 
   def to_s
@@ -158,9 +175,15 @@ end
 class Computer < Player
   CORNERS = [1, 3, 7, 9]
   CENTER = 5
-  WIN_STATES = [[1, 2, 3], [4, 5, 6], [7, 8, 9],
+  WIN_LINES = [[1, 2, 3], [4, 5, 6], [7, 8, 9],
               [1, 4, 7], [2, 5, 8], [3, 6, 9],
               [1, 5, 9], [7, 5, 3]]
+
+  OPP_PIECE = {
+    X: :O,
+    O: :X
+  }
+
   DIFFICULTIES = {
     'e' => :easy,
     'easy' => :easy,
@@ -169,11 +192,16 @@ class Computer < Player
   }
 
   include Invalid
-  attr_reader :difficulty
+  attr_reader :difficulty, :opponent_piece, :positions_occupied
   
   def initialize(board)
     super
     select_difficulty
+  end
+
+  def game_piece=(piece)
+    @game_piece = piece
+    @opponent_piece = OPP_PIECE[piece]
   end
 
   def select_difficulty
@@ -206,16 +234,19 @@ class Computer < Player
   end
 
   def choose_hard
+    win_position = critical_square?(game_piece)
+    block_position = critical_square?(opponent_piece)
+
     if comp_goes_first?
       1
     elsif second_and_center?
       CENTER
-    elsif win_line
-      win_line
-    elsif block_line
-      block_line
+    elsif win_position
+      win_position
+    elsif block_position
+      block_position
     else
-      weighted_line(board, comp, choices, lines.first)
+      weighted_position
     end
   end
 
@@ -227,78 +258,74 @@ class Computer < Player
     available_spaces.size == 8 && available_spaces.include?(CENTER)
   end
   
-  def critical_square?
-    lines = split_win_states
-
-    lines.each do |line|
-      state = line.map { |sq| board[sq] }
-      next unless state.any?(EMPTY)
-      return line[state.index(EMPTY)] if state.count(mark) == 2
+  def critical_square?(piece)
+    win_lines = potential_win_lines_for(piece)
+    win_lines.each do |line|
+      state = line.map { |position| board.state_of(position) }
+      return line[state.index(nil)] if state.count(piece) == 2
     end
     nil
   end
   
-  def split_win_states(board, opp)
-    opp_squares = board.keys.select { |sq| board[sq] == opp }
-    WIN_STATES.partition do |state|
-      state.any? { |sq| opp_squares.include?(sq) }
-    end.reverse
+  def potential_win_lines_for(piece)
+    occupied = positions_containing(piece)
+
+    WIN_LINES.select do |win_line|
+      win_line.all? do |position| 
+        occupied.include?(position) ||
+        board.state_of(position) == nil
+      end
+    end
+  end
+
+  def positions_containing(piece)
+    board.all_spaces.select do |position| 
+      board.state_of(position) == piece
+    end
+  end
+
+  def weighted_position
+    @positions_occupied = positions_containing(game_piece)
+    weights = find_weights
+  
+    max_index = weights.index(weights.max)
+    available_spaces[max_index]
   end
   
-  def desireable_square?(line, cmp_sq, sq)
-    line.include?(cmp_sq) &&
-      !line.include?(CENTER) &&
-      CORNERS.include?(sq)
-  end
-  
-  def state(board, opp, comp)
-    choices = find_choices(board)
-    lines = split_win_states(board, opp)
-    win_line = critical_square?(board, lines.first, comp)
-    block_line = critical_square?(board, lines.last, opp)
-  
-    [choices, lines, win_line, block_line]
-  end
-  
-  def find_weights(choices, win_lines, comp_squares)
-    choices.map do |sq|
+  def find_weights
+    available_spaces.map do |position|
       weight = 0
-      win_lines.each do |line|
-        next unless line.include?(sq)
-        comp_squares.each do |cmp_sq|
-          weight += 1 if desireable_square?(line, cmp_sq, sq)
+      WIN_LINES.each do |line|
+        next unless line.include?(position)
+        positions_occupied.each do |comp_position|
+          weight += 1 if desireable_square?(line, comp_position, position)
         end
       end
       weight
     end
   end
-  
-  def weighted_line(board, comp, choices, win_lines)
-    comp_squares = board.keys.select { |sq| board[sq] == comp }
-    weights = find_weights(choices, win_lines, comp_squares)
-  
-    max_index = weights.index(weights.max)
-    choices[max_index]
-  end
 
+  def desireable_square?(line, comp_position, position)
+    line.include?(comp_position) &&
+      !line.include?(CENTER) &&
+      CORNERS.include?(position)
+  end
+  
 end
 
 class TTTGame
   @@game_number = 0
   @@computer = true
-  TITLE = "-------Tic Tac Toe-------"
+  TITLE = "Tic Tac Toe"
   X = :X
   O = :O
-  WIN_STATES = [[1, 2, 3], [4, 5, 6], [7, 8, 9],
+  
+  WIN_LINES = [[1, 2, 3], [4, 5, 6], [7, 8, 9],
               [1, 4, 7], [2, 5, 8], [3, 6, 9],
               [1, 5, 9], [7, 5, 3]]
 
   include Invalid
   attr_reader :map, :title, :board, :player1, :player2, :order, :winner
-
-  def initialize
-    @map = Map.new
-  end
 
   def display_goodbye_message
     puts "Thanks for playing Tic Tac Toe!"
@@ -312,17 +339,61 @@ class TTTGame
     puts "#{order.last} chose position #{last_move}"
   end
 
+  def display_score
+    p1_score = format_score(player1.score)
+    p2_score = format_score(player2.score)
+    span = max_name_size + 2
+    scoreboard = build_scoreboard(span, p1_score, p2_score)
+
+    puts scoreboard
+  end
+
+  def build_scoreboard(span, p1_score, p2_score)
+    line = horizontal_rule(span)
+    names = "|" + player1.name.center(span) +
+            "|" + player2.name.center(span) + "|"
+    scores = "|" + p1_score.center(span) + "|" + p2_score.center(span) + "|"
+
+    <<-SCORE
+    #{TITLE.center((span * 2) + 4,'-')}
+    #{line}
+    #{names}
+    #{scores}
+    #{line}
+    SCORE
+  end
+
+  def horizontal_rule(span)
+    "+" + "-" * span + "+" + "-" * span + "+"
+  end
+
+  def format_score(score)
+    score.to_s.rjust(2, '0')
+  end
+
+  def max_name_size
+    [player1.name.size, player2.name.size].max
+  end
+
   def refresh_screen
     system 'clear'
-    puts TITLE
+    display_score
     puts order.first
     puts board
     puts map
   end
 
   def setup_game
-    @board = Board.new
-    build_players if @@game_number == 0
+    if @@game_number == 0
+      @board = Board.new
+      build_players 
+    else
+      board.reset
+      player1.reset
+      player2.reset
+    end
+    
+    @map = Map.new
     determine_turn_order
   end
 
@@ -361,12 +432,13 @@ class TTTGame
     
     @winner = player1.game_piece == winning_mark ? player1 : player2
     winner.increment_score
+    @@game_number += 1
   end
 
   def winner?
     winner = nil
 
-    WIN_STATES.each do |win_line|
+    WIN_LINES.each do |win_line|
 
       line = win_line.map do |position|
         board.board[position].state
@@ -391,15 +463,29 @@ class TTTGame
     end
   end
 
+  def play_again?
+    choice = nil
+    loop do
+      puts "Would you like to play again? (y/n)"
+      choice = gets.chomp
+      break if ['y', 'n'].include?(choice.downcase)
+      puts "Sorry, invalid choice."
+    end
+    choice == 'y'
+  end
+
   def play
     display_welcome_message
-    setup_game
     loop do
-      take_turn
-      break if someone_won? || board_full?
+      setup_game
+      loop do
+        take_turn
+        break if someone_won? || board_full?
+      end
+      refresh_screen
+      display_result
+      break unless play_again?
     end
-    refresh_screen
-    display_result
     display_goodbye_message
   end
 end
