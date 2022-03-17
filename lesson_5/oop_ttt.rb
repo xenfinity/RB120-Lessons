@@ -1,5 +1,5 @@
-module Invalid
-  def invalid
+module Messages
+  def invalid_message
     prompt "Invalid entry, please try again"
   end
 end
@@ -90,15 +90,15 @@ end
 class Board < Grid
   X = :X
   O = :O
+  OPP_PIECE = {
+    X: O,
+    O: X
+  }
   CORNERS = [1, 3, 7, 9]
   CENTER = 5
   WIN_LINES = [[1, 2, 3], [4, 5, 6], [7, 8, 9],
                [1, 4, 7], [2, 5, 8], [3, 6, 9],
                [1, 5, 9], [7, 5, 3]]
-  OPP_PIECE = {
-    X: O,
-    O: X
-  }
 
   @@all_spaces = *(1..9)
   attr_reader :available_spaces
@@ -113,11 +113,13 @@ class Board < Grid
   end
 
   def [](position)
-    grid[position].state
+    square = @grid[position]
+    square.state
   end
 
   def []=(position, piece)
-    @grid[position].mark(piece)
+    square = @grid[position]
+    square.mark(piece)
     available_spaces.delete(position)
   end
 
@@ -155,7 +157,8 @@ end
 
 class Map < Grid
   def clear_square(position)
-    @grid[position].clear_state
+    square = @grid[position]
+    square.clear_state
   end
 
   private
@@ -171,11 +174,11 @@ end
 
 class Player
   include Formatting
-  include Invalid
-  
+  include Messages
+
   attr_accessor :piece
   attr_reader :score, :name, :board, :available_spaces
-  
+
   def initialize(board)
     @board = board
     @score = 0
@@ -210,7 +213,8 @@ class Human < Player
 
   def choose_position(available_spaces)
     @available_spaces = available_spaces
-    prompt_for_position
+    chosen_position = prompt_for_position
+    chosen_position
   end
 
   private
@@ -223,30 +227,30 @@ class Human < Player
   def prompt_for_position
     loop do
       prompt "Choose a square (#{joinor(available_spaces)}): "
-      input = gets.chomp
+      position = gets.chomp
 
-      return input.to_i if valid_space_choice?(input)
-      invalid
+      return position.to_i if valid_positive_integer?(position) &&
+                              valid_position_choice?(position)
+      invalid_message
     end
   end
 
-  def valid_space_choice?(input)
-    unless input == input.to_i.to_s && available_spaces.include?(input.to_i)
-      return false
-    end
-    true
+  def valid_position_choice?(input)
+    available_spaces.include?(input.to_i)
+  end
+
+  def valid_positive_integer?(input)
+    input == input.to_i.to_s && input != '0'
   end
 
   def prompt_for_name
-    chosen_name = nil
     loop do
       prompt "Please enter #{label}'s name: "
       chosen_name = gets.chomp
 
-      break unless valid_name?(chosen_name)
-      invalid
+      return chosen_name if valid_name?(chosen_name)
+      invalid_message
     end
-    chosen_name
   end
 
   def valid_name?(chosen_name)
@@ -262,9 +266,9 @@ class Computer < Player
     'hard' => :hard
   }
 
-  include Invalid
+  include Messages
 
-  attr_reader :difficulty, :opponent_piece, :block_position, 
+  attr_reader :difficulty, :opponent_piece, :block_position,
               :position_finders
 
   def initialize(board)
@@ -304,23 +308,21 @@ class Computer < Player
   end
 
   def select_difficulty
-    choice = prompt_for_difficulty
-    @difficulty = DIFFICULTIES[choice]
+    difficulty = prompt_for_difficulty
+    @difficulty = difficulty
   end
 
   def prompt_for_difficulty
-    choice = nil
     loop do
       prompt "Please select a difficulty - Easy(e) or Hard(h): "
-      choice = gets.chomp.downcase
+      difficulty = gets.chomp.downcase
 
-      break if valid_easy_or_hard?(choice)
-      invalid
+      return DIFFICULTIES[difficulty] if valid_difficulty?(difficulty)
+      invalid_message
     end
-    choice
   end
 
-  def valid_easy_or_hard?(choice)
+  def valid_difficulty?(choice)
     %w(e h easy hard).include?(choice)
   end
 
@@ -431,9 +433,9 @@ end
 class TTTGame
   TITLE = "Tic Tac Toe"
 
-  include Invalid
+  include Messages
   include Formatting
-  
+
   attr_reader :map, :board, :max_score, :player1, :player2,
               :order, :winner, :champion
   attr_accessor :game_number, :game_over, :computer
@@ -491,13 +493,13 @@ class TTTGame
   end
 
   def prompt_for_max_score
-    max_score = nil
     loop do
       prompt "Please enter a maximum score (number greater than 4): "
       max_score = gets.chomp
-      valid_max_score?(max_score) ? break : invalid
+
+      return max_score.to_i if valid_max_score?(max_score)
+      invalid_message
     end
-    max_score.to_i
   end
 
   def valid_max_score?(num)
@@ -510,7 +512,7 @@ class TTTGame
 
   def build_players
     num_humans = prompt_for_num_humans
-    @computer = false if num_humans == '2'
+    @computer = false if num_humans == 2
 
     @player1 = Human.new(@board)
     @player2 = computer ? Computer.new(@board) : Human.new(@board, "Player 2")
@@ -524,13 +526,13 @@ class TTTGame
   end
 
   def prompt_for_num_humans
-    num_humans = nil
     loop do
       prompt "Please enter the number of human players (1 or 2):"
       num_humans = gets.chomp
-      valid_1_or_2?(num_humans) ? break : invalid
+
+      return num_humans.to_i if valid_1_or_2?(num_humans)
+      invalid_message
     end
-    num_humans
   end
 
   def valid_1_or_2?(choice)
@@ -630,14 +632,14 @@ class TTTGame
   end
 
   def prompt_for_play_again
-    choice = nil
+    play_again = nil
     loop do
       prompt "Would you like to play again? (y/n)"
-      choice = gets.chomp.downcase
-      break if valid_yes_or_no?(choice)
-      invalid
+      play_again = gets.chomp.downcase
+      break if valid_yes_or_no?(play_again)
+      invalid_message
     end
-    choice == 'y' || choice == 'yes'
+    play_again == 'y' || play_again == 'yes'
   end
 
   def valid_yes_or_no?(choice)
