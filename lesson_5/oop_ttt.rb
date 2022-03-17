@@ -197,7 +197,13 @@ class Player
   end
 
   def <=>(other_player)
-    score <=> other_player.score
+    compare_score(other_player.score)
+  end
+
+  protected
+
+  def compare_score(other_score)
+    score <=> other_score
   end
 end
 
@@ -252,7 +258,7 @@ class Human < Player
   end
 
   def valid_name?(chosen_name)
-    !chosen_name.empty?
+    !chosen_name.empty? && !chosen_name.start_with?(' ')
   end
 end
 
