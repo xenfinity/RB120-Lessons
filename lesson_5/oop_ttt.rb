@@ -1,46 +1,13 @@
-require 'pry'
-module Utilities
+module Invalid
   def invalid
     prompt "Invalid entry, please try again"
-  end
-
-  def clear
-    system 'clear'
-  end
-
-  def pause
-    sleep(rand(1..2))
-  end
-
-  def valid_1_or_2?(choice)
-    %w(1 2).include?(choice)
-  end
-
-  def valid_easy_or_hard?(choice)
-    %w(e h easy hard).include?(choice)
-  end
-
-  def valid_yes_or_no?(choice)
-    %w(y n yes no).include?(choice)
-  end
-
-  def valid_space_choice?(input)
-    unless input == input.to_i.to_s && available_spaces.include?(input.to_i)
-      return false
-    end
-    true
-  end
-
-  def valid_max_score?(num)
-    if num.to_i.to_s == num && num != '0' &&
-       num.to_i >= 5
-      return true
-    end
-    false
   end
 end
 
 module Formatting
+  MARGIN_SIZE = 4
+  CENTER_TO_BORDER = 3
+
   attr_reader :span
 
   def prompt(message)
@@ -48,7 +15,7 @@ module Formatting
   end
 
   def indent(message)
-    "    #{message}"
+    " " * MARGIN_SIZE + message
   end
 
   def format_score(score)
@@ -86,7 +53,7 @@ class Square
     @state = state
   end
 
-  def clear
+  def clear_state
     @state = nil
   end
 end
@@ -101,7 +68,8 @@ class Grid
   end
 
   def draw
-    indent = " " * (span - 7)
+    indent = " " * (span - Formatting::MARGIN_SIZE -
+                    Formatting::CENTER_TO_BORDER)
     grid_as_string = <<-GRID
     
     #{indent}     |     |
@@ -186,8 +154,8 @@ class Board < Grid
 end
 
 class Map < Grid
-  def clear(position)
-    @grid[position].clear
+  def clear_square(position)
+    @grid[position].clear_state
   end
 
   private
@@ -202,12 +170,12 @@ class Map < Grid
 end
 
 class Player
+  include Formatting
+  include Invalid
+  
   attr_accessor :piece
   attr_reader :score, :name, :board, :available_spaces
-
-  include Formatting
-  include Utilities
-
+  
   def initialize(board)
     @board = board
     @score = 0
@@ -248,14 +216,7 @@ class Human < Player
   private
 
   def choose_name
-    chosen_name = nil
-    loop do
-      prompt "Please enter #{label}'s name: "
-      chosen_name = gets.chomp
-
-      break unless chosen_name.empty?
-      invalid
-    end
+    chosen_name = prompt_for_name
     @name = chosen_name
   end
 
@@ -268,6 +229,29 @@ class Human < Player
       invalid
     end
   end
+
+  def valid_space_choice?(input)
+    unless input == input.to_i.to_s && available_spaces.include?(input.to_i)
+      return false
+    end
+    true
+  end
+
+  def prompt_for_name
+    chosen_name = nil
+    loop do
+      prompt "Please enter #{label}'s name: "
+      chosen_name = gets.chomp
+
+      break unless valid_name?(chosen_name)
+      invalid
+    end
+    chosen_name
+  end
+
+  def valid_name?(chosen_name)
+    chosen_name.empty?
+  end
 end
 
 class Computer < Player
@@ -278,9 +262,10 @@ class Computer < Player
     'hard' => :hard
   }
 
-  include Utilities
-  attr_reader :difficulty, :opponent_piece, :potential_win_lines,
-              :block_position, :position_finders
+  include Invalid
+
+  attr_reader :difficulty, :opponent_piece, :block_position, 
+              :position_finders
 
   def initialize(board)
     super
@@ -295,7 +280,7 @@ class Computer < Player
 
   def choose_position(available_spaces)
     @available_spaces = available_spaces
-    pause
+    pause_to_think
     if difficulty == :easy
       choose_easy
     else
@@ -305,15 +290,25 @@ class Computer < Player
 
   private
 
+  def pause_to_think
+    sleep(rand(1..2))
+  end
+
   def set_position_finders
     @position_finders = [method(:find_position_if_first),
                          method(:find_position_if_second),
                          method(:find_winning_position),
                          method(:find_opponents_winning_position),
-                         method(:find_weighted_position)]
+                         method(:find_weighted_position),
+                         method(:find_random_position)]
   end
 
   def select_difficulty
+    choice = prompt_for_difficulty
+    @difficulty = DIFFICULTIES[choice]
+  end
+
+  def prompt_for_difficulty
     choice = nil
     loop do
       prompt "Please select a difficulty - Easy(e) or Hard(h): "
@@ -322,7 +317,11 @@ class Computer < Player
       break if valid_easy_or_hard?(choice)
       invalid
     end
-    @difficulty = DIFFICULTIES[choice]
+    choice
+  end
+
+  def valid_easy_or_hard?(choice)
+    %w(e h easy hard).include?(choice)
   end
 
   def choose_name
@@ -336,7 +335,7 @@ class Computer < Player
   end
 
   def choose_easy
-    available_spaces.sample
+    find_random_position
   end
 
   def choose_hard
@@ -350,20 +349,20 @@ class Computer < Player
     position
   end
 
-  def comp_goes_first?
-    available_spaces.size == 9
-  end
-
-  def second_and_center?
-    available_spaces.size == 8 && available_spaces.include?(Board::CENTER)
-  end
-
   def find_position_if_first
     return 1 if comp_goes_first?
   end
 
+  def comp_goes_first?
+    available_spaces.size == 9
+  end
+
   def find_position_if_second
     return Board::CENTER if second_and_center?
+  end
+
+  def second_and_center?
+    available_spaces.size == 8 && available_spaces.include?(Board::CENTER)
   end
 
   def find_winning_position
@@ -401,36 +400,40 @@ class Computer < Player
   end
 
   def find_weighted_position
-    @potential_win_lines = potential_win_lines_for(piece)
     weights = find_weights
-
     max_index = weights.index(weights.max)
-    available_spaces[max_index]
+    available_spaces[max_index] unless weights.max == 0
   end
 
   def find_weights
+    potential_win_lines = potential_win_lines_for(piece)
     available_spaces.map do |position|
       weight = 0
       Board::WIN_LINES.each do |line|
         next unless line.include?(position)
-        weight += 1 if desireable_square?(line, position)
+        weight += 1 if desireable_square?(line, position, potential_win_lines)
       end
       weight
     end
   end
 
-  def desireable_square?(line, position)
+  def desireable_square?(line, position, potential_win_lines)
     potential_win_lines.include?(line) &&
       !line.include?(Board::CENTER) &&
       Board::CORNERS.include?(position)
+  end
+
+  def find_random_position
+    available_spaces.sample
   end
 end
 
 class TTTGame
   TITLE = "Tic Tac Toe"
 
-  include Utilities
+  include Invalid
   include Formatting
+  
   attr_reader :map, :board, :max_score, :player1, :player2,
               :order, :winner, :champion
   attr_accessor :game_number, :game_over, :computer
@@ -484,9 +487,9 @@ class TTTGame
 
   def set_max_score
     max_score = prompt_for_max_score
-    @max_score = max_score.to_i
+    @max_score = max_score
   end
-  
+
   def prompt_for_max_score
     max_score = nil
     loop do
@@ -494,7 +497,15 @@ class TTTGame
       max_score = gets.chomp
       valid_max_score?(max_score) ? break : invalid
     end
-    max_score
+    max_score.to_i
+  end
+
+  def valid_max_score?(num)
+    if num.to_i.to_s == num && num != '0' &&
+       num.to_i >= 5
+      return true
+    end
+    false
   end
 
   def build_players
@@ -522,6 +533,10 @@ class TTTGame
     num_humans
   end
 
+  def valid_1_or_2?(choice)
+    %w(1 2).include?(choice)
+  end
+
   def determine_turn_order
     @order = game_number.even? ? [player1, player2] : [player2, player1]
     order.first.piece = Board::X
@@ -535,6 +550,10 @@ class TTTGame
     board.draw
     puts indent(heading("Map"))
     map.draw
+  end
+
+  def clear
+    system 'clear'
   end
 
   def display_scoreboard
@@ -577,7 +596,7 @@ class TTTGame
     current_player = order.first
     position = current_player.choose_position(board.available_spaces)
     board[position] = current_player.piece
-    map.clear(position)
+    map.clear_square(position)
     order.rotate!
   end
 
@@ -606,6 +625,11 @@ class TTTGame
   end
 
   def play_again?
+    play_again = prompt_for_play_again
+    play_again
+  end
+
+  def prompt_for_play_again
     choice = nil
     loop do
       prompt "Would you like to play again? (y/n)"
@@ -614,6 +638,10 @@ class TTTGame
       invalid
     end
     choice == 'y' || choice == 'yes'
+  end
+
+  def valid_yes_or_no?(choice)
+    %w(y n yes no).include?(choice)
   end
 
   def set_champion
