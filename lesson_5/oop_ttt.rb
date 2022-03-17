@@ -183,11 +183,6 @@ class Player
     @board = board
     @score = 0
     choose_name
-    @available_spaces = board.available_spaces
-  end
-
-  def new_game
-    @available_spaces = board.available_spaces
   end
 
   def to_s
@@ -254,7 +249,7 @@ class Human < Player
   end
 
   def valid_name?(chosen_name)
-    chosen_name.empty?
+    !chosen_name.empty?
   end
 end
 
