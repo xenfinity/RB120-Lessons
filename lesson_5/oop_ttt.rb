@@ -99,17 +99,13 @@ class Board < Grid
   WIN_LINES = [[1, 2, 3], [4, 5, 6], [7, 8, 9],
                [1, 4, 7], [2, 5, 8], [3, 6, 9],
                [1, 5, 9], [7, 5, 3]]
+  ALL_SPACES = *(1..9)
 
-  @@all_spaces = *(1..9)
   attr_reader :available_spaces
 
   def initialize(span=10)
     super(span)
     @available_spaces = *(1..9)
-  end
-
-  def all_spaces
-    @@all_spaces
   end
 
   def [](position)
@@ -121,6 +117,14 @@ class Board < Grid
     square = @grid[position]
     square.mark(piece)
     available_spaces.delete(position)
+  end
+
+  def square_states
+    square_states = {}
+    @grid.each do |position, square|
+      square_states[position] = square.state
+    end
+    square_states
   end
 
   def winner?
@@ -205,7 +209,7 @@ class Human < Player
     super()
   end
 
-  def choose_position(available_spaces)
+  def choose_position(available_spaces, _square_states)
     @available_spaces = available_spaces
     chosen_position = prompt_for_position
     chosen_position
@@ -262,12 +266,11 @@ class Computer < Player
 
   include Messages
 
-  attr_reader :board, :difficulty, :opponent_piece, :block_position,
-              :position_finders
+  attr_reader :board, :difficulty, :opponent_piece,
+              :square_states, :available_spaces, :position_finders
 
-  def initialize(board)
-    super()
-    @board = board
+  def initialize
+    super
     select_difficulty
     set_position_finders
   end
@@ -277,8 +280,9 @@ class Computer < Player
     @opponent_piece = Board::OPP_PIECE[piece]
   end
 
-  def choose_position(available_spaces)
+  def choose_position(available_spaces, square_states)
     @available_spaces = available_spaces
+    @square_states = square_states
     pause_to_think
     if difficulty == :easy
       choose_easy
@@ -373,7 +377,7 @@ class Computer < Player
   def find_winning_position_for(piece)
     win_lines = potential_win_lines_for(piece)
     win_lines.each do |line|
-      state = line.map { |position| board[position] }
+      state = line.map { |position| square_states[position] }
       return line[state.index(nil)] if state.count(piece) == 2
     end
     nil
@@ -385,14 +389,14 @@ class Computer < Player
     Board::WIN_LINES.select do |win_line|
       win_line.all? do |position|
         occupied.include?(position) ||
-          board[position].nil?
+          square_states[position].nil?
       end
     end
   end
 
   def positions_containing(piece)
-    board.all_spaces.select do |position|
-      board[position] == piece
+    Board::ALL_SPACES.select do |position|
+      square_states[position] == piece
     end
   end
 
@@ -509,7 +513,7 @@ class TTTGame
     @computer = false if num_humans == 2
 
     @player1 = Human.new
-    @player2 = computer ? Computer.new(@board) : Human.new("Player 2")
+    @player2 = computer ? Computer.new : Human.new("Player 2")
 
     @span = [(max_name_size + 2), 12].max
     board.span = span
@@ -590,7 +594,9 @@ class TTTGame
   def take_turn
     refresh_screen
     current_player = order.first
-    position = current_player.choose_position(board.available_spaces)
+    available = board.available_spaces
+    square_states = board.square_states
+    position = current_player.choose_position(available, square_states)
     board[position] = current_player.piece
     map.clear_square(position)
     order.rotate!
