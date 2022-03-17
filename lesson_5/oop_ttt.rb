@@ -177,10 +177,9 @@ class Player
   include Messages
 
   attr_accessor :piece
-  attr_reader :score, :name, :board, :available_spaces
+  attr_reader :score, :name, :available_spaces
 
-  def initialize(board)
-    @board = board
+  def initialize
     @score = 0
     choose_name
   end
@@ -201,9 +200,9 @@ end
 class Human < Player
   attr_reader :label
 
-  def initialize(board, label="Player 1")
+  def initialize(label="Player 1")
     @label = label
-    super(board)
+    super()
   end
 
   def choose_position(available_spaces)
@@ -263,11 +262,12 @@ class Computer < Player
 
   include Messages
 
-  attr_reader :difficulty, :opponent_piece, :block_position,
+  attr_reader :board, :difficulty, :opponent_piece, :block_position,
               :position_finders
 
   def initialize(board)
-    super
+    super()
+    @board = board
     select_difficulty
     set_position_finders
   end
@@ -508,8 +508,8 @@ class TTTGame
     num_humans = prompt_for_num_humans
     @computer = false if num_humans == 2
 
-    @player1 = Human.new(@board)
-    @player2 = computer ? Computer.new(@board) : Human.new(@board, "Player 2")
+    @player1 = Human.new
+    @player2 = computer ? Computer.new(@board) : Human.new("Player 2")
 
     @span = [(max_name_size + 2), 12].max
     board.span = span
