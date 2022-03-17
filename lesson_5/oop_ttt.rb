@@ -23,7 +23,7 @@ module Formatting
   end
 
   def heading(title)
-    title.center((span * 2) + 4, '-').to_s
+    title.center((span * 2) + MARGIN_SIZE, '-').to_s
   end
 
   def horizontal_rule
