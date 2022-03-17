@@ -503,8 +503,7 @@ class TTTGame
   end
 
   def valid_max_score?(num)
-    if num.to_i.to_s == num && num != '0' &&
-       num.to_i >= 5
+    if num.to_i.to_s == num && num.to_i >= 5
       return true
     end
     false
