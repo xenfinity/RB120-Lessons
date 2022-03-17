@@ -1,4 +1,5 @@
-module DisplayUtilities
+require 'pry'
+module Utilities
   def invalid
     prompt "Invalid entry, please try again"
   end
@@ -9,6 +10,33 @@ module DisplayUtilities
 
   def pause
     sleep(rand(1..2))
+  end
+
+  def valid_1_or_2?(choice)
+    %w(1 2).include?(choice)
+  end
+
+  def valid_easy_or_hard?(choice)
+    %w(e h easy hard).include?(choice)
+  end
+
+  def valid_yes_or_no?(choice)
+    %w(y n yes no).include?(choice)
+  end
+
+  def valid_space_choice?(input)
+    unless input == input.to_i.to_s && available_spaces.include?(input.to_i)
+      return false
+    end
+    true
+  end
+
+  def valid_max_score?(num)
+    if num.to_i.to_s == num && num != '0' &&
+       num.to_i >= 5
+      return true
+    end
+    false
   end
 end
 
@@ -72,7 +100,7 @@ class Grid
     build_grid
   end
 
-  def to_s
+  def draw
     indent = " " * (span - 7)
     grid_as_string = <<-GRID
     
@@ -87,7 +115,7 @@ class Grid
     #{indent}     |     |
     
     GRID
-    grid_as_string
+    puts grid_as_string
   end
 end
 
@@ -107,7 +135,7 @@ class Board < Grid
   @@all_spaces = *(1..9)
   attr_reader :available_spaces
 
-  def initialize(span=0)
+  def initialize(span=10)
     super(span)
     @available_spaces = *(1..9)
   end
@@ -174,11 +202,11 @@ class Map < Grid
 end
 
 class Player
-  attr_accessor :ttt_piece
+  attr_accessor :piece
   attr_reader :score, :name, :board, :available_spaces
 
   include Formatting
-  include DisplayUtilities
+  include Utilities
 
   def initialize(board)
     @board = board
@@ -192,7 +220,7 @@ class Player
   end
 
   def to_s
-    indent "#{name}'s turn, you are #{ttt_piece}'s!"
+    indent "#{name}'s turn, you are #{piece}'s!"
   end
 
   def increment_score
@@ -240,13 +268,6 @@ class Human < Player
       invalid
     end
   end
-
-  def valid_space_choice?(input)
-    unless input == input.to_i.to_s && available_spaces.include?(input.to_i)
-      return false
-    end
-    true
-  end
 end
 
 class Computer < Player
@@ -257,17 +278,18 @@ class Computer < Player
     'hard' => :hard
   }
 
-  include DisplayUtilities
+  include Utilities
   attr_reader :difficulty, :opponent_piece, :potential_win_lines,
-              :win_position, :block_position
+              :block_position, :position_finders
 
   def initialize(board)
     super
     select_difficulty
+    set_position_finders
   end
 
-  def ttt_piece=(piece)
-    @ttt_piece = piece
+  def piece=(piece)
+    @piece = piece
     @opponent_piece = Board::OPP_PIECE[piece]
   end
 
@@ -277,13 +299,19 @@ class Computer < Player
     if difficulty == :easy
       choose_easy
     else
-      return 1 if comp_goes_first?
-      return Board::CENTER if second_and_center?
       choose_hard
     end
   end
 
   private
+
+  def set_position_finders
+    @position_finders = [method(:find_position_if_first),
+                         method(:find_position_if_second),
+                         method(:find_winning_position),
+                         method(:find_opponents_winning_position),
+                         method(:find_weighted_position)]
+  end
 
   def select_difficulty
     choice = nil
@@ -291,7 +319,7 @@ class Computer < Player
       prompt "Please select a difficulty - Easy(e) or Hard(h): "
       choice = gets.chomp.downcase
 
-      break if %w(e h easy hard).include?(choice)
+      break if valid_easy_or_hard?(choice)
       invalid
     end
     @difficulty = DIFFICULTIES[choice]
@@ -299,7 +327,8 @@ class Computer < Player
 
   def choose_name
     @name = ["Magic Head", "Galileo Humpkins",
-             "Hollabackatcha", "Methuselah Honeysuckle"].sample
+             "Hollabackatcha", "Methuselah Honeysuckle",
+             "Ovaltine Jenkins", "Felicia Fancybottom"].sample
   end
 
   def to_s
@@ -311,15 +340,14 @@ class Computer < Player
   end
 
   def choose_hard
-    @win_position = critical_square?(ttt_piece)
-    @block_position = critical_square?(opponent_piece)
-    if win_position
-      win_position
-    elsif block_position
-      block_position
-    else
-      weighted_position
+    position = nil
+
+    position_finders.each do |position_finder|
+      position = position_finder.call
+      return position if position
     end
+
+    position
   end
 
   def comp_goes_first?
@@ -330,7 +358,23 @@ class Computer < Player
     available_spaces.size == 8 && available_spaces.include?(Board::CENTER)
   end
 
-  def critical_square?(piece)
+  def find_position_if_first
+    return 1 if comp_goes_first?
+  end
+
+  def find_position_if_second
+    return Board::CENTER if second_and_center?
+  end
+
+  def find_winning_position
+    find_winning_position_for(piece)
+  end
+
+  def find_opponents_winning_position
+    find_winning_position_for(opponent_piece)
+  end
+
+  def find_winning_position_for(piece)
     win_lines = potential_win_lines_for(piece)
     win_lines.each do |line|
       state = line.map { |position| board[position] }
@@ -356,8 +400,8 @@ class Computer < Player
     end
   end
 
-  def weighted_position
-    @potential_win_lines = potential_win_lines_for(ttt_piece)
+  def find_weighted_position
+    @potential_win_lines = potential_win_lines_for(piece)
     weights = find_weights
 
     max_index = weights.index(weights.max)
@@ -385,7 +429,7 @@ end
 class TTTGame
   TITLE = "Tic Tac Toe"
 
-  include DisplayUtilities
+  include Utilities
   include Formatting
   attr_reader :map, :board, :max_score, :player1, :player2,
               :order, :winner, :champion
@@ -395,7 +439,6 @@ class TTTGame
     @span = 0
     @game_number = 0
     @computer = true
-    @champion = nil
   end
 
   def play
@@ -440,21 +483,18 @@ class TTTGame
   end
 
   def set_max_score
+    max_score = prompt_for_max_score
+    @max_score = max_score.to_i
+  end
+  
+  def prompt_for_max_score
     max_score = nil
     loop do
       prompt "Please enter a maximum score (number greater than 4): "
       max_score = gets.chomp
       valid_max_score?(max_score) ? break : invalid
     end
-    @max_score = max_score.to_i
-  end
-
-  def valid_max_score?(num)
-    if num.to_i.to_s == num && num != '0' &&
-       num.to_i >= 5
-      return true
-    end
-    false
+    max_score
   end
 
   def build_players
@@ -477,24 +517,24 @@ class TTTGame
     loop do
       prompt "Please enter the number of human players (1 or 2):"
       num_humans = gets.chomp
-      %w(1 2).include?(num_humans) ? break : invalid
+      valid_1_or_2?(num_humans) ? break : invalid
     end
     num_humans
   end
 
   def determine_turn_order
     @order = game_number.even? ? [player1, player2] : [player2, player1]
-    order.first.ttt_piece = Board::X
-    order.last.ttt_piece = Board::O
+    order.first.piece = Board::X
+    order.last.piece = Board::O
   end
 
   def refresh_screen
     clear
     display_scoreboard
     puts order.first unless game_over
-    puts board
+    board.draw
     puts indent(heading("Map"))
-    puts map
+    map.draw
   end
 
   def display_scoreboard
@@ -536,7 +576,7 @@ class TTTGame
     refresh_screen
     current_player = order.first
     position = current_player.choose_position(board.available_spaces)
-    board[position] = current_player.ttt_piece
+    board[position] = current_player.piece
     map.clear(position)
     order.rotate!
   end
@@ -545,7 +585,7 @@ class TTTGame
     winning_piece = board.winner?
     return false unless winning_piece
 
-    @winner = player1.ttt_piece == winning_piece ? player1 : player2
+    @winner = player1.piece == winning_piece ? player1 : player2
     winner.increment_score
     true
   end
@@ -570,7 +610,7 @@ class TTTGame
     loop do
       prompt "Would you like to play again? (y/n)"
       choice = gets.chomp.downcase
-      break if %w(y n yes no).include?(choice)
+      break if valid_yes_or_no?(choice)
       invalid
     end
     choice == 'y' || choice == 'yes'
