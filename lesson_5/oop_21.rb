@@ -39,13 +39,18 @@ end
 class Player
   HIT = :hit
   STAY = :stay
-  DECISIONS = [HIT, STAY]
+  DECISIONS = {
+    "h" => HIT,
+    "hit" => HIT,
+    "s" => STAY,
+    "stay" => STAY
+  }
 
   include Calculator
-  attr_reader :hand, :name, :total
+  attr_reader :hand, :name, :total, :score
 
   def initialize
-
+    @score = 0
     clear_hand
     choose_name
   end
@@ -55,11 +60,20 @@ class Player
     @total = calculate_total(hand)
   end
 
+  def first_card_value
+    calculate_total([hand.first])
+  end
+
   def clear_hand
     @hand = []
   end
 
   def busted?
+    total > @@max_total
+  end
+
+  def scored
+    @score += 1
   end
 end
 
@@ -72,7 +86,23 @@ class Human < Player
   end
 
   def make_decision
-    :stay
+    decision = prompt_for_decision
+    decision
+  end
+
+  def prompt_for_decision
+    input = nil
+    loop do
+      Display.prompt("#{name}'s turn, hit or stay? (h/s)")
+      input = gets.chomp.downcase
+      break if hit_or_stay?(input)
+      invalid_message
+    end
+    DECISIONS[input]
+  end
+
+  def hit_or_stay?(input)
+    %w(h hit s stay).include?(input)
   end
 
   def choose_name
@@ -96,14 +126,27 @@ class Human < Player
 end
 
 class Computer < Player
+  @@names_taken = []
+
   def make_decision
-    DECISIONS.sample
+    sleep(1)
+    if total < @@max_total - 4
+      HIT
+    else
+      STAY
+    end
   end
 
   def choose_name
-    @name = ["Magic Head", "Galileo Humpkins",
-             "Hollabackatcha", "Methuselah Honeysuckle",
-             "Ovaltine Jenkins", "Felicia Fancybottom"].sample
+    name = nil
+    loop do
+      name = ["Magic Head", "Galileo Humpkins",
+              "Hollabackatcha", "Methuselah Honeysuckle",
+              "Ovaltine Jenkins", "Felicia Fancybottom"].sample
+      break unless @@names_taken.include?(name)
+    end
+    @@names_taken << name
+    @name = name 
   end
 end
 
@@ -119,6 +162,28 @@ class Dealer < Computer
   end
 end
 
+class PlayerFactory
+  attr_reader :humans_created
+  
+  def initialize
+    @humans_created = 0
+  end
+
+  def build_player(type)
+    case type
+    when :human
+      label = "Player #{humans_created + 1}"
+      player = Human.new(label)
+      @humans_created += 1
+    when :computer
+      player = Computer.new
+    else
+      player = Dealer.new
+    end
+    player
+  end
+end
+
 class Deck
   attr_accessor :cards
 
@@ -126,7 +191,7 @@ class Deck
     @cards = []
     num_decks = calculate_num_decks(num_players)
     create_deck(num_decks)
-    shuffle_deck
+    shuffle
   end
 
   def calculate_num_decks(num_players)
@@ -143,7 +208,7 @@ class Deck
     end
   end
 
-  def shuffle_deck
+  def shuffle
     cards.shuffle!
   end
 end
@@ -187,34 +252,51 @@ class Display
     ---------
   CARD
 
+  attr_reader :max_cards
+
   def self.prompt(message)
     puts "==> #{message}"
   end
 
-  def refresh(active_players)
+  def refresh(active_players, inactive_players)
     system 'clear'
-    players_to_display = active_players[0...-1]
-    dealer = active_players.last
-
-    players_to_display.each do |player|
-      display_total(player)
-      display_hand(player.hand)
-    end
-    display_hand(dealer.hand, true)
+    find_max_cards(active_players)
+    display_players(active_players)
+    puts horizontal_rule
+    display_players(inactive_players, true)
   end
   
   private
 
-  def display_total(player)
-    puts "#{player.name} has #{player.total}"
+  def find_max_cards(players)
+    hands = players.map { |player| player.hand }
+    hand_sizes = hands.map { |hand| hand.size }
+    @max_cards = hand_sizes.max
   end
 
-  def display_hand(player_hand, hide_second_card = false)
+  def horizontal_rule
+    "-" * 13 * max_cards
+  end
+
+  def display_players(active_players, hide_last_card = false)
+    active_players.each do |player|
+      display_state(player, hide_last_card)
+      display_hand(player.hand, hide_last_card)
+    end
+  end
+
+  def display_state(player, hide_last_card = false)
+    total = hide_last_card ? player.first_card_value : player.total
+    puts "#{player.name} has #{total}"
+    puts "#{player.name} busted :(" if player.busted?
+  end
+
+  def display_hand(player_hand, hide_last_card = false)
     card_strings = player_hand.map do |card| 
                      card_to_s(card.face, card.suit)
                    end
 
-    card_strings[-1] = HIDDEN_CARD if hide_second_card
+    card_strings[-1] = HIDDEN_CARD if hide_last_card
 
     hand_string = join_multiline_strings(card_strings)
     puts hand_string
@@ -252,45 +334,31 @@ end
 
 
 
-class PlayerFactory
-  attr_reader :num_humans, :humans_created
-
-  def initialize(num_humans)
-    @num_humans = num_humans
-    @humans_created = 0
-  end
-
-  def build_player
-    if humans_created < num_humans
-      label = "Player #{humans_created + 1}"
-      player = Human.new(label)
-      @humans_created += 1
-    else
-      player = Dealer.new
-    end
-    player
-  end
-end
-
 class TwentyOneGame
+  HUMAN = :human
+  COMPUTER = :computer
+  DEALER = :dealer
+
   include Messages
-  attr_reader :display, :deck, :players, :dealer, :active_players, :game_number, :max_total
+  attr_reader :display, :deck, :players, :dealer, :active_players, :inactive_players, :game_number, :max_total, :player_factory, :winners
 
   def initialize
     @game_number = 0
     @max_total = 21
+    @display = Display.new
+    @players = []
+    @player_factory = PlayerFactory.new
   end
   
   def play
-    display_welcome_message
-    setup_game
-    play_game
-    finish_game
-    display_goodbye_message
-  end
-
-  def display_welcome_message
-    Display.prompt("Welcome to Twenty-One!")
+    welcome_message
+    loop do
+      setup_game
+      play_game
+      finish_game
+      break unless play_again?
+    end
+    goodbye_message
   end
 
   def setup_game
@@ -300,41 +368,46 @@ class TwentyOneGame
     else
       clear_player_hands
     end
-    
-    @display = Display.new
+
+    @winners = []
     @deck = Deck.new(players.size)
     @dealer.deck = deck
     deal_initial_hands
     @active_players = []
+    @inactive_players = players.clone
   end
 
   def build_players
-    players = []
-    num_humans = prompt_for_num("humans", 1)
-    factory = PlayerFactory.new(num_humans)
-    
-    1.upto(num_humans + 1) do
-      players << factory.build_player
-    end
+    num_humans = prompt_for_num(HUMAN, 1, 3)
+    num_comps = prompt_for_num(COMPUTER, 0, 2)
+    add_players_to_game(num_humans, HUMAN)
+    add_players_to_game(num_comps, COMPUTER)
+    add_players_to_game(1, DEALER)
 
     @dealer = players.last
-    @players = players
   end
 
-  def prompt_for_num(type, minimum)
+  def add_players_to_game(count, type)
+    1.upto(count) do
+      @players << player_factory.build_player(type)
+    end
+  end
+
+  def prompt_for_num(type, minimum, maximum)
     number = nil
     loop do
-      Display.prompt("How many total #{type}? (must be more than #{minimum})")
+      Display.prompt("How many #{type}s? (#{minimum} to #{maximum})")
       number = gets.chomp
-      break if valid_num_choice?(number, minimum)
+      break if valid_num_choice?(number, minimum, maximum)
       invalid_message
     end
     number.to_i
   end
 
-  def valid_num_choice?(input, minimum=1)
+  def valid_num_choice?(input, minimum, maximum)
      valid_integer?(input) && 
-       input.to_i >= minimum
+       input.to_i >= minimum &&
+       input.to_i <= maximum
   end
 
   def valid_integer?(input)
@@ -360,27 +433,84 @@ class TwentyOneGame
   def play_game
     players.each do |player|
       @active_players << player
+      @inactive_players.delete(player)
       take_turn(player)
     end
   end
 
   def take_turn(player)
     loop do
-      display.refresh(active_players)
+      display.refresh(active_players, inactive_players)
       decision = player.make_decision
-      break if decision == Player::STAY
+      break if player_stayed?(decision)
 
       card = dealer.deal_card
       player.add_to_hand(card)
+      break if player.busted?
     end
+  end
+
+  def player_stayed?(decision)
+    decision == Player::STAY
   end
   
   def finish_game
     @game_number += 1
+    determine_winners
+    game_over_message(winners)
   end
 
-  def display_goodbye_message
-    Display.prompt("Thanks for playing Twenty-One!")
+  def determine_winners
+    players.each do |player|
+      if player.total > dealer.total && !player.busted?
+        @winners << player
+        player.scored
+      end
+    end
+  end
+
+  def play_again?
+    play_again = prompt_for_play_again
+    play_again
+  end
+
+  def prompt_for_play_again
+    play_again = nil
+    loop do
+      Display.prompt "Would you like to play again? (y/n)"
+      play_again = gets.chomp.downcase
+      break if valid_yes_or_no?(play_again)
+      invalid_message
+    end
+    play_again == 'y' || play_again == 'yes'
+  end
+
+  def valid_yes_or_no?(choice)
+    %w(y n yes no).include?(choice)
+  end
+
+  def welcome_message
+    Display.prompt "Welcome to Twenty-One!"
+  end
+
+  def goodbye_message
+    Display.prompt "Thanks for playing Twenty-One!"
+  end
+
+  def game_over_message(winners)
+    if !winners.empty?
+      names = winners.map { |winner| winner.name }
+      puts joinor(names, ', ', 'and') + " won!"
+    else
+      puts "Dealer won!"
+    end
+  end
+
+  def joinor(items, delim=', ', tail='or')
+    return items[-1].to_s if items.size == 1
+    items[0...-1].join(delim) +
+      ' ' + tail + ' ' +
+      items[-1].to_s
   end
 end
 
