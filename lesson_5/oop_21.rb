@@ -1,5 +1,3 @@
-require 'pry'
-
 module Calculator
   @@game_mode = 21
 
@@ -10,17 +8,21 @@ module Calculator
   def calculate_total(hand)
     total = 0
     hand.each do |card|
-      if card.ace?
-        total += 11
-      elsif card.face?
-        total += 10
-      else
-        total += card.face.to_i
-      end
+      total += calculate_card_total(card)
     end
     number_of_aces = hand.select(&:ace?).size
     total = correct_for_aces(total, number_of_aces)
     total
+  end
+
+  def calculate_card_total(card)
+    if card.ace?
+      11
+    elsif card.face?
+      10
+    else
+      card.face.to_i
+    end
   end
 
   def correct_for_aces(total, number_of_aces)
@@ -41,7 +43,7 @@ class Player
     "s" => STAY,
     "stay" => STAY
   }
-  
+
   include Calculator
   attr_accessor :has_played
   attr_reader :hand, :name, :total, :score
@@ -142,13 +144,13 @@ class Computer < Player
   def choose_name
     name = nil
     loop do
-      name = ["Magic Head", "Galileo Humpkins",
+      name = ["Magic Head", "Galileo Humpkins", "Medulla Oblongata",
               "Hollabackatcha", "Methuselah Honeysuckle",
               "Ovaltine Jenkins", "Felicia Fancybottom"].sample
       break unless @@names_taken.include?(name)
     end
     @@names_taken << name
-    @name = name 
+    @name = name
   end
 end
 
@@ -166,7 +168,7 @@ end
 
 class PlayerFactory
   attr_reader :humans_created
-  
+
   def initialize
     @humans_created = 0
   end
@@ -174,15 +176,14 @@ class PlayerFactory
   def build_player(type)
     case type
     when :human
-      label = "Player #{humans_created + 1}"
-      player = Human.new(label)
       @humans_created += 1
+      label = "Player #{humans_created}"
+      Human.new(label)
     when :computer
-      player = Computer.new
+      Computer.new
     else
-      player = Dealer.new
+      Dealer.new
     end
-    player
   end
 end
 
@@ -198,11 +199,11 @@ class Deck
 
   def calculate_num_decks(num_players, game_mode)
     max_deck_value = 340.0 - (10 * num_players)
-    ((num_players * game_mode)/max_deck_value).ceil
+    ((num_players * game_mode) / max_deck_value).ceil
   end
 
   def create_deck(num_decks)
-    num_decks.times do 
+    num_decks.times do
       Card::SUITS.each do |suit|
         Card::FACES.each do |face|
           @cards << Card.new(face, suit)
@@ -269,13 +270,12 @@ class Display
   end
 
   def self.invalid
-    self.prompt "Invalid entry, please try again"
+    prompt "Invalid entry, please try again"
   end
 
   def refresh
-    active, inactive = players.partition do |player|
-                                           player.has_played
-                                         end
+    active, inactive = players.partition(&:has_played)
+
     system 'clear'
     display_title
     display_scoreboard
@@ -300,15 +300,15 @@ class Display
   end
 
   def game_over(winners)
-    names = winners.map { |winner| winner.name }
+    names = winners.map(&:name)
     puts joinor(names, ', ', 'and') + " won!"
   end
-  
+
   private
-  
+
   def max_name_size
-    player_names = players.map { |player| player.name }
-    player_name_sizes = player_names.map { |name| name.size }
+    player_names = players.map(&:name)
+    player_name_sizes = player_names.map(&:size)
     player_name_sizes.max
   end
 
@@ -374,9 +374,9 @@ class Display
   end
 
   def display_hand(player_hand, hide_last_card = false)
-    card_strings = player_hand.map do |card| 
-                     card_to_s(card.face, card.suit)
-                   end
+    card_strings = player_hand.map do |card|
+      card_to_s(card.face, card.suit)
+    end
 
     card_strings[-1] = HIDDEN_CARD if hide_last_card
 
@@ -389,14 +389,19 @@ class Display
 
     joined_string = ""
     0.upto(num_of_lines - 1) do |line_number|
-      string_line = ""
-      strings.each do |string|
-        lines = string.lines
-        string_line << lines[line_number].chomp
-      end
-      joined_string << string_line + "\n"
+      joined_line = join_line(strings, line_number)
+      joined_string << joined_line + "\n"
     end
     joined_string
+  end
+
+  def join_line(strings, line_number)
+    joined_line = ""
+    strings.each do |string|
+      lines = string.lines
+      joined_line << lines[line_number].chomp
+    end
+    joined_line
   end
 
   def horizontal_rule(title = "")
@@ -406,7 +411,7 @@ class Display
 
   def card_to_s(face, suit)
     suit = SUIT_SYMBOL[suit]
-    card = <<-CARD
+    <<-CARD
     ---------
     |#{face.center(3)}    |
     |       |
@@ -415,7 +420,6 @@ class Display
     |    #{face.center(3)}|
     ---------
     CARD
-    card
   end
 
   def joinor(items, delim=', ', tail='or')
@@ -452,11 +456,11 @@ class TwentyOneGame
     @display = Display.new
     @player_factory = PlayerFactory.new
     @players = []
-    
+
     determine_game_mode
     determine_title
   end
-  
+
   def play
     display.welcome
     loop do
@@ -499,7 +503,7 @@ class TwentyOneGame
   end
 
   def setup_game
-    if game_number == 0 
+    if game_number == 0
       build_players
       display.setup(players)
     end
@@ -538,9 +542,9 @@ class TwentyOneGame
   end
 
   def valid_num_choice?(input, minimum, maximum)
-     valid_integer?(input) && 
-       input.to_i >= minimum &&
-       input.to_i <= maximum
+    valid_integer?(input) &&
+      input.to_i >= minimum &&
+      input.to_i <= maximum
   end
 
   def valid_integer?(input)
@@ -562,7 +566,7 @@ class TwentyOneGame
   end
 
   def deal_initial_hands
-    2.times do 
+    2.times do
       players.each do |player|
         card = dealer.deal_card
         player.add_to_hand(card)
@@ -580,7 +584,7 @@ class TwentyOneGame
   def take_turn(player)
     loop do
       display.refresh
-      break if dealer_wins_by_default?
+      break if dealer.has_played && dealer_wins_by_default?
 
       decision = player.make_decision
       break if player_stayed?(decision)
@@ -594,15 +598,14 @@ class TwentyOneGame
   def dealer_wins_by_default?
     non_dealer_players = players[0...-1]
     non_dealer_players.all? do |player|
-      (player.total <= dealer.total && dealer.has_played) ||
-        player.busted?
+      player.total <= dealer.total || player.busted?
     end
   end
 
   def player_stayed?(decision)
     decision == Player::STAY
   end
-  
+
   def finish_game
     determine_winners
     display.refresh
@@ -616,7 +619,7 @@ class TwentyOneGame
     else
       compare_scores(dealer.total)
       if winners.empty?
-        winners << dealer 
+        winners << dealer
         dealer.scored
       end
     end
