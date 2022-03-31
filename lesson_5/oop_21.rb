@@ -1,3 +1,4 @@
+require 'pry'
 module Messages
   def invalid_message
     Display.prompt "Invalid entry, please try again"
@@ -45,7 +46,8 @@ class Player
     "s" => STAY,
     "stay" => STAY
   }
-
+  
+  include Messages
   include Calculator
   attr_reader :hand, :name, :total, :score
 
@@ -57,6 +59,10 @@ class Player
 
   def add_to_hand(card)
     @hand << card
+    refresh_total
+  end
+
+  def refresh_total
     @total = calculate_total(hand)
   end
 
@@ -130,7 +136,8 @@ class Computer < Player
 
   def make_decision
     sleep(1)
-    if total < @@max_total - 4
+    refresh_total
+    if total < @@max_total - 3
       HIT
     else
       STAY
@@ -332,15 +339,14 @@ class Display
   end
 end
 
-
-
 class TwentyOneGame
   HUMAN = :human
   COMPUTER = :computer
   DEALER = :dealer
 
   include Messages
-  attr_reader :display, :deck, :players, :dealer, :active_players, :inactive_players, :game_number, :max_total, :player_factory, :winners
+  attr_reader :display, :deck, :players, :dealer, :active_players, :inactive_players,
+              :game_number, :max_total, :player_factory, :winners
 
   def initialize
     @game_number = 0
@@ -361,6 +367,8 @@ class TwentyOneGame
     goodbye_message
   end
 
+  private
+
   def setup_game
     if game_number == 0 
       build_players
@@ -369,17 +377,14 @@ class TwentyOneGame
       clear_player_hands
     end
 
-    @winners = []
-    @deck = Deck.new(players.size)
-    @dealer.deck = deck
+    reset_game_space
     deal_initial_hands
-    @active_players = []
-    @inactive_players = players.clone
   end
 
   def build_players
     num_humans = prompt_for_num(HUMAN, 1, 3)
     num_comps = prompt_for_num(COMPUTER, 0, 2)
+
     add_players_to_game(num_humans, HUMAN)
     add_players_to_game(num_comps, COMPUTER)
     add_players_to_game(1, DEALER)
@@ -411,14 +416,21 @@ class TwentyOneGame
   end
 
   def valid_integer?(input)
-    input == input.to_i.to_s && 
-      input != '0'
+    input == input.to_i.to_s
   end
 
   def clear_player_hands
     players.each do |player|
       player.clear_hand
     end
+  end
+
+  def reset_game_space
+    @winners = []
+    @deck = Deck.new(players.size)
+    @dealer.deck = deck
+    @active_players = []
+    @inactive_players = players.clone
   end
 
   def deal_initial_hands
@@ -455,14 +467,23 @@ class TwentyOneGame
   end
   
   def finish_game
-    @game_number += 1
+    display.refresh(active_players, inactive_players)
     determine_winners
-    game_over_message(winners)
+    game_over_message
+    @game_number += 1
   end
 
   def determine_winners
+    if dealer.busted?
+      compare_scores(0)
+    else
+      compare_scores(dealer.total)
+    end
+  end
+
+  def compare_scores(total)
     players.each do |player|
-      if player.total > dealer.total && !player.busted?
+      if player.total > total && !player.busted?
         @winners << player
         player.scored
       end
@@ -497,12 +518,13 @@ class TwentyOneGame
     Display.prompt "Thanks for playing Twenty-One!"
   end
 
-  def game_over_message(winners)
-    if !winners.empty?
+  def game_over_message
+    if winners.empty?
+      message = dealer.busted? ? "Nobody won!" : "Dealer won!"
+      puts message
+    else
       names = winners.map { |winner| winner.name }
       puts joinor(names, ', ', 'and') + " won!"
-    else
-      puts "Dealer won!"
     end
   end
 
