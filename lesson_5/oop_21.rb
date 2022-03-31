@@ -1,15 +1,10 @@
 require 'pry'
-module Messages
-  def invalid_message
-    Display.prompt "Invalid entry, please try again"
-  end
-end
 
 module Calculator
-  @@max_total = 21
+  @@game_mode = 21
 
-  def self.max_total=(max_total)
-    @@max_total = max_total
+  def self.game_mode=(game_mode)
+    @@game_mode = game_mode
   end
 
   def calculate_total(hand)
@@ -29,7 +24,7 @@ module Calculator
   end
 
   def correct_for_aces(total, number_of_aces)
-    until total <= @@max_total || number_of_aces < 1
+    until total <= @@game_mode || number_of_aces < 1
       total -= 10
       number_of_aces -= 1
     end
@@ -47,7 +42,6 @@ class Player
     "stay" => STAY
   }
   
-  include Messages
   include Calculator
   attr_accessor :has_played
   attr_reader :hand, :name, :total, :score
@@ -76,7 +70,7 @@ class Player
   end
 
   def busted?
-    total > @@max_total
+    total > @@game_mode
   end
 
   def scored
@@ -103,7 +97,7 @@ class Human < Player
       Display.prompt("#{name}'s turn, hit or stay? (h/s)")
       input = gets.chomp.downcase
       break if hit_or_stay?(input)
-      invalid_message
+      Display.invalid
     end
     DECISIONS[input]
   end
@@ -123,7 +117,7 @@ class Human < Player
       chosen_name = gets.chomp
 
       return chosen_name if valid_name?(chosen_name)
-      invalid_message
+      Display.invalid
     end
   end
 
@@ -138,7 +132,7 @@ class Computer < Player
   def make_decision
     sleep(1)
     refresh_total
-    if total < @@max_total - 3
+    if total < @@game_mode - 3
       HIT
     else
       STAY
@@ -195,15 +189,16 @@ end
 class Deck
   attr_accessor :cards
 
-  def initialize(num_players)
+  def initialize(num_players, game_mode)
     @cards = []
-    num_decks = calculate_num_decks(num_players)
+    num_decks = calculate_num_decks(num_players, game_mode)
     create_deck(num_decks)
     shuffle
   end
 
-  def calculate_num_decks(num_players)
-    (num_players/4.0).ceil
+  def calculate_num_decks(num_players, game_mode)
+    max_deck_value = 340.0 - (10 * num_players)
+    ((num_players * game_mode)/max_deck_value).ceil
   end
 
   def create_deck(num_decks)
@@ -260,9 +255,10 @@ class Display
     ---------
   CARD
 
-  attr_reader :max_cards, :span, :players, :number_of_players
+  attr_accessor :title
+  attr_reader :span, :players, :number_of_players
 
-  def initialize(players)
+  def setup(players)
     @players = players
     @span = [(max_name_size + 2), 12].max
     @number_of_players = players.size
@@ -272,16 +268,40 @@ class Display
     puts "==> #{message}"
   end
 
+  def self.invalid
+    self.prompt "Invalid entry, please try again"
+  end
+
   def refresh
     active, inactive = players.partition do |player|
                                            player.has_played
                                          end
     system 'clear'
-    find_max_cards(active)
+    display_title
     display_scoreboard
     display_players(active)
     puts horizontal_rule
     display_players(inactive, true)
+  end
+
+  def modes(game_modes)
+    game_modes.each_with_index do |mode, index|
+      selection = index + 1
+      puts "#{selection}) #{mode}\n"
+    end
+  end
+
+  def welcome
+    Display.prompt "Welcome to #{title}!"
+  end
+
+  def goodbye
+    Display.prompt "Thanks for playing #{title}!"
+  end
+
+  def game_over(winners)
+    names = winners.map { |winner| winner.name }
+    puts joinor(names, ', ', 'and') + " won!"
   end
   
   private
@@ -290,6 +310,10 @@ class Display
     player_names = players.map { |player| player.name }
     player_name_sizes = player_names.map { |name| name.size }
     player_name_sizes.max
+  end
+
+  def display_title
+    puts horizontal_rule(title)
   end
 
   def display_scoreboard
@@ -322,12 +346,6 @@ class Display
   def score_of(player)
     score = format_score(player.score)
     score.center(span)
-  end
-
-  def find_max_cards(players)
-    hands = players.map { |player| player.hand }
-    hand_sizes = hands.map { |hand| hand.size }
-    @max_cards = hand_sizes.max
   end
 
   def scoreboard_line
@@ -381,8 +399,9 @@ class Display
     joined_string
   end
 
-  def horizontal_rule
-    "-" * 13 * max_cards
+  def horizontal_rule(title = "")
+    length = scoreboard_line.size
+    INDENT + title.center(length, '-')
   end
 
   def card_to_s(face, suit)
@@ -398,42 +417,91 @@ class Display
     CARD
     card
   end
+
+  def joinor(items, delim=', ', tail='or')
+    return items[-1].to_s if items.size == 1
+    items[0...-1].join(delim) +
+      ' ' + tail + ' ' +
+      items[-1].to_s
+  end
 end
 
 class TwentyOneGame
   HUMAN = :human
   COMPUTER = :computer
   DEALER = :dealer
+  TITLE = {
+    21 => "Twenty-One",
+    31 => "Thirty-One",
+    41 => "Fourty-One",
+    51 => "Fifty-One",
+    61 => "Sixty-One",
+    71 => "Seventy-One",
+    81 => "Eighty-One",
+    91 => "Ninety-One",
+    101 => "One-O-One",
+    111 => "Eleventy-One"
+  }
+  GAME_MODES = TITLE.keys
 
-  include Messages
   attr_reader :display, :deck, :players, :dealer, :game_number,
-              :max_total, :player_factory, :winners
+              :game_mode, :player_factory, :winners, :title
 
   def initialize
     @game_number = 0
-    @max_total = 21
-    @players = []
+    @display = Display.new
     @player_factory = PlayerFactory.new
+    @players = []
+    
+    determine_game_mode
+    determine_title
   end
   
   def play
-    welcome_message
+    display.welcome
     loop do
       setup_game
       play_game
       finish_game
       break unless play_again?
     end
-    goodbye_message
+    display.goodbye
   end
 
   private
 
+  def determine_game_mode
+    mode = prompt_for_game_mode
+    @game_mode = GAME_MODES[mode - 1]
+    Calculator.game_mode = game_mode
+  end
+
+  def prompt_for_game_mode
+    mode = nil
+    loop do
+      Display.prompt("Please select a game mode:")
+      display.modes(TITLE.values)
+      mode = gets.chomp
+      break if valid_mode?(mode)
+      Display.invalid
+    end
+    mode.to_i
+  end
+
+  def valid_mode?(mode)
+    selections = *(1..GAME_MODES.size)
+    selections.include?(mode.to_i)
+  end
+
+  def determine_title
+    @title = TITLE[game_mode]
+    display.title = title
+  end
+
   def setup_game
     if game_number == 0 
       build_players
-      Calculator.max_total = max_total
-      @display = Display.new(players)
+      display.setup(players)
     end
 
     reset_game_space
@@ -464,7 +532,7 @@ class TwentyOneGame
       Display.prompt("How many #{type}s? (#{minimum} to #{maximum})")
       number = gets.chomp
       break if valid_num_choice?(number, minimum, maximum)
-      invalid_message
+      Display.invalid
     end
     number.to_i
   end
@@ -482,7 +550,7 @@ class TwentyOneGame
   def reset_game_space
     reset_players
     @winners = []
-    @deck = Deck.new(players.size)
+    @deck = Deck.new(players.size, game_mode)
     @dealer.deck = deck
   end
 
@@ -531,8 +599,6 @@ class TwentyOneGame
     end
   end
 
-  
-
   def player_stayed?(decision)
     decision == Player::STAY
   end
@@ -540,7 +606,7 @@ class TwentyOneGame
   def finish_game
     determine_winners
     display.refresh
-    game_over_message
+    display.game_over(winners)
     @game_number += 1
   end
 
@@ -549,8 +615,10 @@ class TwentyOneGame
       compare_scores(0)
     else
       compare_scores(dealer.total)
-      winners << dealer if winners.empty?
-      dealer.scored
+      if winners.empty?
+        winners << dealer 
+        dealer.scored
+      end
     end
   end
 
@@ -574,33 +642,13 @@ class TwentyOneGame
       Display.prompt "Would you like to play again? (y/n)"
       play_again = gets.chomp.downcase
       break if valid_yes_or_no?(play_again)
-      invalid_message
+      Display.invalid
     end
     play_again == 'y' || play_again == 'yes'
   end
 
   def valid_yes_or_no?(choice)
     %w(y n yes no).include?(choice)
-  end
-
-  def welcome_message
-    Display.prompt "Welcome to Twenty-One!"
-  end
-
-  def goodbye_message
-    Display.prompt "Thanks for playing Twenty-One!"
-  end
-
-  def game_over_message
-    names = winners.map { |winner| winner.name }
-    puts joinor(names, ', ', 'and') + " won!"
-  end
-
-  def joinor(items, delim=', ', tail='or')
-    return items[-1].to_s if items.size == 1
-    items[0...-1].join(delim) +
-      ' ' + tail + ' ' +
-      items[-1].to_s
   end
 end
 
