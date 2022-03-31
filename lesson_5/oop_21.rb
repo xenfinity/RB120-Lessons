@@ -49,6 +49,7 @@ class Player
   
   include Messages
   include Calculator
+  attr_accessor :has_played
   attr_reader :hand, :name, :total, :score
 
   def initialize
@@ -259,21 +260,69 @@ class Display
     ---------
   CARD
 
-  attr_reader :max_cards
+  attr_reader :max_cards, :span, :players, :number_of_players
+
+  def initialize(players)
+    @players = players
+    @span = [(max_name_size + 2), 12].max
+    @number_of_players = players.size
+  end
 
   def self.prompt(message)
     puts "==> #{message}"
   end
 
-  def refresh(active_players, inactive_players)
+  def refresh
+    active, inactive = players.partition do |player|
+                                           player.has_played
+                                         end
     system 'clear'
-    find_max_cards(active_players)
-    display_players(active_players)
+    find_max_cards(active)
+    display_scoreboard
+    display_players(active)
     puts horizontal_rule
-    display_players(inactive_players, true)
+    display_players(inactive, true)
   end
   
   private
+  
+  def max_name_size
+    player_names = players.map { |player| player.name }
+    player_name_sizes = player_names.map { |name| name.size }
+    player_name_sizes.max
+  end
+
+  def display_scoreboard
+    scoreboard = build_scoreboard
+    puts scoreboard
+  end
+
+  def build_scoreboard
+    line = scoreboard_line
+    names = "|"
+    scores = "|"
+
+    players.each do |player|
+      names << "#{name_of(player)}|"
+      scores << "#{score_of(player)}|"
+    end
+
+    <<-SCOREBOARD
+    #{line}
+    #{names}
+    #{scores}
+    #{line}
+    SCOREBOARD
+  end
+
+  def name_of(player)
+    player.name.center(span)
+  end
+
+  def score_of(player)
+    score = format_score(player.score)
+    score.center(span)
+  end
 
   def find_max_cards(players)
     hands = players.map { |player| player.hand }
@@ -281,8 +330,20 @@ class Display
     @max_cards = hand_sizes.max
   end
 
-  def horizontal_rule
-    "-" * 13 * max_cards
+  def scoreboard_line
+    line = "+"
+    number_of_players.times do
+      line << "-" * span + "+"
+    end
+    line
+  end
+
+  def format_score(score)
+    score.to_s.rjust(2, '0')
+  end
+
+  def heading(title)
+    title.center((span * 2) + MARGIN_SIZE, '-').to_s
   end
 
   def display_players(active_players, hide_last_card = false)
@@ -324,6 +385,10 @@ class Display
     joined_string
   end
 
+  def horizontal_rule
+    "-" * 13 * max_cards
+  end
+
   def card_to_s(face, suit)
     suit = SUIT_SYMBOL[suit]
     card = <<-CARD
@@ -345,13 +410,12 @@ class TwentyOneGame
   DEALER = :dealer
 
   include Messages
-  attr_reader :display, :deck, :players, :dealer, :active_players, :inactive_players,
-              :game_number, :max_total, :player_factory, :winners
+  attr_reader :display, :deck, :players, :dealer, :game_number,
+              :max_total, :player_factory, :winners
 
   def initialize
     @game_number = 0
     @max_total = 21
-    @display = Display.new
     @players = []
     @player_factory = PlayerFactory.new
   end
@@ -373,8 +437,7 @@ class TwentyOneGame
     if game_number == 0 
       build_players
       Calculator.max_total = max_total
-    else
-      clear_player_hands
+      @display = Display.new(players)
     end
 
     reset_game_space
@@ -419,18 +482,18 @@ class TwentyOneGame
     input == input.to_i.to_s
   end
 
-  def clear_player_hands
-    players.each do |player|
-      player.clear_hand
-    end
-  end
-
   def reset_game_space
+    reset_players
     @winners = []
     @deck = Deck.new(players.size)
     @dealer.deck = deck
-    @active_players = []
-    @inactive_players = players.clone
+  end
+
+  def reset_players
+    players.each do |player|
+      player.clear_hand
+      player.has_played = false
+    end
   end
 
   def deal_initial_hands
@@ -444,15 +507,14 @@ class TwentyOneGame
 
   def play_game
     players.each do |player|
-      @active_players << player
-      @inactive_players.delete(player)
+      player.has_played = true
       take_turn(player)
     end
   end
 
   def take_turn(player)
     loop do
-      display.refresh(active_players, inactive_players)
+      display.refresh
       decision = player.make_decision
       break if player_stayed?(decision)
 
@@ -467,8 +529,8 @@ class TwentyOneGame
   end
   
   def finish_game
-    display.refresh(active_players, inactive_players)
     determine_winners
+    display.refresh
     game_over_message
     @game_number += 1
   end
@@ -478,6 +540,8 @@ class TwentyOneGame
       compare_scores(0)
     else
       compare_scores(dealer.total)
+      winners << dealer if winners.empty?
+      dealer.scored
     end
   end
 
@@ -520,8 +584,7 @@ class TwentyOneGame
 
   def game_over_message
     if winners.empty?
-      message = dealer.busted? ? "Nobody won!" : "Dealer won!"
-      puts message
+      puts "Nobody won!"
     else
       names = winners.map { |winner| winner.name }
       puts joinor(names, ', ', 'and') + " won!"
