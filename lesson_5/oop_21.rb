@@ -1,4 +1,4 @@
-module Calculator
+module HandCalculator
   @@game_mode = 21
 
   def self.game_mode=(game_mode)
@@ -44,7 +44,7 @@ class Player
     "stay" => STAY
   }
 
-  include Calculator
+  include HandCalculator
   attr_accessor :has_played
   attr_reader :hand, :name, :total, :score
 
@@ -477,7 +477,7 @@ class TwentyOneGame
   def determine_game_mode
     mode = prompt_for_game_mode
     @game_mode = GAME_MODES[mode - 1]
-    Calculator.game_mode = game_mode
+    HandCalculator.game_mode = game_mode
   end
 
   def prompt_for_game_mode
