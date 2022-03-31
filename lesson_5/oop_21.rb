@@ -93,6 +93,13 @@ class Human < Player
     decision
   end
 
+  def choose_name
+    chosen_name = prompt_for_name
+    @name = chosen_name
+  end
+
+  private
+
   def prompt_for_decision
     input = nil
     loop do
@@ -106,11 +113,6 @@ class Human < Player
 
   def hit_or_stay?(input)
     %w(h hit s stay).include?(input)
-  end
-
-  def choose_name
-    chosen_name = prompt_for_name
-    @name = chosen_name
   end
 
   def prompt_for_name
@@ -196,6 +198,8 @@ class Deck
     create_deck(num_decks)
     shuffle
   end
+
+  private
 
   def calculate_num_decks(num_players, game_mode)
     max_deck_value = 340.0 - (10 * num_players)
