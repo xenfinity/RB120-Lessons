@@ -239,10 +239,10 @@ class Card
   def face?
     %w(J Q K).include?(face)
   end
-
 end
 
 class Display
+  INDENT = " " * 4
   SUIT_SYMBOL = {
     "H" => "\u2665".encode('utf-8'),
     "D" => "\u2666".encode('utf-8'),
@@ -342,10 +342,6 @@ class Display
     score.to_s.rjust(2, '0')
   end
 
-  def heading(title)
-    title.center((span * 2) + MARGIN_SIZE, '-').to_s
-  end
-
   def display_players(active_players, hide_last_card = false)
     active_players.each do |player|
       display_state(player, hide_last_card)
@@ -355,8 +351,8 @@ class Display
 
   def display_state(player, hide_last_card = false)
     total = hide_last_card ? player.first_card_value : player.total
-    puts "#{player.name} has #{total}"
-    puts "#{player.name} busted :(" if player.busted?
+    puts INDENT + "#{player.name} has #{total}"
+    puts INDENT + "#{player.name} busted :(" if player.busted?
   end
 
   def display_hand(player_hand, hide_last_card = false)
@@ -445,8 +441,9 @@ class TwentyOneGame
   end
 
   def build_players
-    num_humans = prompt_for_num(HUMAN, 1, 3)
-    num_comps = prompt_for_num(COMPUTER, 0, 2)
+    num_humans = prompt_for_num(HUMAN, 1, 2)
+    max_comps = 4 - num_humans
+    num_comps = prompt_for_num(COMPUTER, 0, max_comps)
 
     add_players_to_game(num_humans, HUMAN)
     add_players_to_game(num_comps, COMPUTER)
@@ -515,6 +512,8 @@ class TwentyOneGame
   def take_turn(player)
     loop do
       display.refresh
+      break if dealer_wins_by_default?
+
       decision = player.make_decision
       break if player_stayed?(decision)
 
@@ -523,6 +522,16 @@ class TwentyOneGame
       break if player.busted?
     end
   end
+
+  def dealer_wins_by_default?
+    non_dealer_players = players[0...-1]
+    non_dealer_players.all? do |player|
+      (player.total <= dealer.total && dealer.has_played) ||
+        player.busted?
+    end
+  end
+
+  
 
   def player_stayed?(decision)
     decision == Player::STAY
@@ -583,12 +592,8 @@ class TwentyOneGame
   end
 
   def game_over_message
-    if winners.empty?
-      puts "Nobody won!"
-    else
-      names = winners.map { |winner| winner.name }
-      puts joinor(names, ', ', 'and') + " won!"
-    end
+    names = winners.map { |winner| winner.name }
+    puts joinor(names, ', ', 'and') + " won!"
   end
 
   def joinor(items, delim=', ', tail='or')
