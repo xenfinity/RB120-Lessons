@@ -484,7 +484,7 @@ class TwentyOneGame
       break if champions?
       break unless play_again?
     end
-    display.champions(champions)
+    display.champions(champions) if champions?
     display.goodbye
   end
 
