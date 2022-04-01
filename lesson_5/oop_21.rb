@@ -120,7 +120,7 @@ class Human < Player
       Display.prompt("Please enter #{label}'s name: ")
       chosen_name = gets.chomp
 
-      return chosen_name if valid_name?(chosen_name)
+      return chosen_name.strip if valid_name?(chosen_name)
       Display.invalid
     end
   end
@@ -290,8 +290,8 @@ class Display
 
   def modes(game_modes)
     game_modes.each_with_index do |mode, index|
-      selection = index + 1
-      puts "#{selection}) #{mode}\n"
+      choice_number = index + 1
+      puts "#{choice_number}) #{mode}\n"
     end
   end
 
@@ -301,6 +301,15 @@ class Display
 
   def goodbye
     Display.prompt "Thanks for playing #{title}!"
+  end
+
+  def champions(champions)
+    names = champions.map(&:name)
+    if names.size == 1
+      puts joinor(names, ', ', 'and') + " is the champion!"
+    else
+      puts joinor(names, ', ', 'and') + " are the champions!"
+    end
   end
 
   def game_over(winners)
@@ -453,13 +462,14 @@ class TwentyOneGame
   GAME_MODES = TITLE.keys
 
   attr_reader :display, :deck, :players, :dealer, :game_number,
-              :game_mode, :player_factory, :winners, :title
+              :game_mode, :player_factory, :winners, :title, :champions
 
   def initialize
     @game_number = 0
     @display = Display.new
     @player_factory = PlayerFactory.new
     @players = []
+    @champions = []
 
     determine_game_mode
     determine_title
@@ -471,8 +481,10 @@ class TwentyOneGame
       setup_game
       play_game
       finish_game
+      break if champions?
       break unless play_again?
     end
+    display.champions(champions)
     display.goodbye
   end
 
@@ -480,7 +492,7 @@ class TwentyOneGame
 
   def determine_game_mode
     mode = prompt_for_game_mode
-    @game_mode = GAME_MODES[mode - 1]
+    @game_mode = GAME_MODES[mode]
     HandCalculator.game_mode = game_mode
   end
 
@@ -493,7 +505,7 @@ class TwentyOneGame
       break if valid_mode?(mode)
       Display.invalid
     end
-    mode.to_i
+    mode.to_i - 1
   end
 
   def valid_mode?(mode)
@@ -623,8 +635,7 @@ class TwentyOneGame
     else
       compare_scores(dealer.total)
       if winners.empty?
-        winners << dealer
-        dealer.scored
+        player_won(dealer)
       end
     end
   end
@@ -632,10 +643,19 @@ class TwentyOneGame
   def compare_scores(total)
     players.each do |player|
       if player.total > total && !player.busted?
-        @winners << player
-        player.scored
+        player_won(player)
       end
     end
+  end
+
+  def player_won(player)
+    @winners << player
+    player.scored
+    @champions << player if player.score >= 5
+  end
+
+  def champions?
+    !@champions.empty?
   end
 
   def play_again?
